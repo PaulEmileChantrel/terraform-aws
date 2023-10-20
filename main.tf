@@ -4,6 +4,12 @@ provider "aws" {
   secret_key = ""
 }
 
+variable "subnet_prefix" {
+  type        = string
+  #default     = ""
+  description = "cidr block for the subnet"
+}
+
 
 # 1. Creat VPC
 resource "aws_vpc" "my_vpc"{
@@ -44,7 +50,7 @@ resource "aws_route_table" "prod_route_table" {
 # 4. Create Subnet
 resource "aws_subnet" "subnet_1" {
   vpc_id = aws_vpc.my_vpc.id
-  cidr_block = "10.0.1.0/24"
+  cidr_block = var.subnet_prefix#"10.0.1.0/24"
   availability_zone = "ca-central-1a"
   tags = {
     Name = "production_subnet_1"
@@ -118,6 +124,10 @@ resource "aws_eip" "one" {
   depends_on = [aws_internet_gateway.gw]
 }
 
+
+output "server_public_ip"{
+  value = aws_eip.one.public_ip
+}
 # 9. Create Ubuntu EC2
 resource "aws_instance" "app_server" {
   ami           = "ami-01a2cb0405fa1877b"
@@ -140,4 +150,12 @@ resource "aws_instance" "app_server" {
                 sudo systemctl start apache2
                 sudo bash -c 'echo your webserver > /var/www/html/index.html'
                 EOF
+}
+
+output "server_private_ip"{
+  value = aws_instance.app_server.private_ip
+}
+
+output "server_id"{
+  value = aws_instance.app_server.id
 }
