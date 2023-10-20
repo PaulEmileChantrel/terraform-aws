@@ -33,7 +33,7 @@ resource "aws_route_table" "prod_route_table" {
 
   route {
     ipv6_cidr_block        = "::/0"
-    egress_only_gateway_id = aws_internet_gateway.gw.id
+    gateway_id = aws_internet_gateway.gw.id
   }
 
   tags = {
@@ -45,7 +45,7 @@ resource "aws_route_table" "prod_route_table" {
 resource "aws_subnet" "subnet_1" {
   vpc_id = aws_vpc.my_vpc.id
   cidr_block = "10.0.1.0/24"
-
+  availability_zone = "ca-central-1a"
   tags = {
     Name = "production_subnet_1"
   }
@@ -53,8 +53,8 @@ resource "aws_subnet" "subnet_1" {
 
 # 5. Associate subnet with route table
 resource "aws_route_table_association" "a"{
-  subnet_id = aws_vpc.subnet_1.id
-  route_table_id = aws_vpc.prod_route_table.id
+  subnet_id = aws_subnet.subnet_1.id
+  route_table_id = aws_route_table.prod_route_table.id
 }
 
 # 6. Security Group Policy to allow port 22,80,443
@@ -102,25 +102,42 @@ resource "aws_security_group" "allow_web" {
   }
 }
 
-# 7. Create Network
+# 7. Create Network Interface with an IP in the subnet
 
 resource "aws_network_interface" "test" {
-  subnet_id       = aws_subnet.public_a.id
-  private_ips     = ["10.0.0.50"]
-  security_groups = [aws_security_group.web.id]
-
-  attachment {
-    instance     = aws_instance.test.id
-    device_index = 1
-  }
+  subnet_id       = aws_subnet.subnet_1.id
+  private_ips     = ["10.0.1.50"]
+  security_groups = [aws_security_group.allow_web.id]
 }
 
+# 8. Assign an EIP to the NI
+resource "aws_eip" "one" {
+  domain                    = "vpc"
+  network_interface         = aws_network_interface.test.id
+  associate_with_private_ip = "10.0.1.50"
+  depends_on = [aws_internet_gateway.gw]
+}
 
-
+# 9. Create Ubuntu EC2
 resource "aws_instance" "app_server" {
   ami           = "ami-01a2cb0405fa1877b"
   instance_type = "t2.micro"
-  tags = {
-    Name = "Helloworld"
+  availability_zone = "ca-central-1a"
+  #key_name = "main-key"
+
+  network_interface {
+    device_index = 0
+    network_interface_id = aws_network_interface.test.id
   }
+
+  tags = {
+    Name = "web-server"
+  }
+  user_data = <<-EOF
+                #!/bin/bash
+                sudo apt update -y
+                sudo apt install apache2 -y
+                sudo systemctl start apache2
+                sudo bash -c 'echo your webserver > /var/www/html/index.html'
+                EOF
 }
